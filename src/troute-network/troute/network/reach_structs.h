@@ -4,6 +4,7 @@
     C Structures
 */
 #include "musking/mc_reach_structs.h"
+#include "diffusive/diffusive_reach_structs.h"
 #include "reservoirs/levelpool/levelpool_structs.h"
 #include "reservoirs/hybrid/hybrid_structs.h"
 #include "reservoirs/rfc/rfc_structs.h"
@@ -15,6 +16,13 @@ typedef union {
   _MC_RFC rfc;
 } _ReachUnion;
 
+typedef union {
+  _Diff_Reach diff_reach;
+  _MC_Levelpool lp;
+  _MC_Hybrid hybrid;
+  _MC_RFC rfc;
+} _DiffReachUnion;
+
 typedef struct {
   _ReachUnion reach;
   int _num_segments; /* FIXME NOT USED HERE??? */
@@ -23,5 +31,14 @@ typedef struct {
   int type;
   long id;
 } _Reach;
+
+typedef struct {
+  _DiffReachUnion reach;
+  int _num_segments; /* FIXME NOT USED HERE??? */
+  long* _upstream_ids;
+  int _num_upstream_ids;
+  int type;
+  long id;
+} _DiffReach;
 
 #endif //REACH_STRUCTS_H
