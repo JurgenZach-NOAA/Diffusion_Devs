@@ -11,8 +11,6 @@ cimport cython
 from libc.stdlib cimport malloc, free
 from libc.stdio cimport printf
 
-from troute.network.diffusive.diffusive_reach cimport Diff_Segment, Diff_Reach, _Diff_Segment, get_diffusive_segment
-
 cimport troute.routing.fast_reach.reach as reach
 
 @cython.boundscheck(False)
@@ -20,7 +18,7 @@ cimport troute.routing.fast_reach.reach as reach
 cdef void compute_diff_kernel(const float[:] timestep_ar_g, const int[:] mem_size_buf, const int[:] usgs_da_reach_g, const int[:,:] frnw_ar_g, const int[:,:] size_bathy_g, const float[:] dbcd_g, const float[:] para_ar_g, const float[:,:,:] diff_buff, float[:,:] so_ar_g, const float[:,:] ubcd_g, const float[:,:] qtrib_g, const float[:,:] usgs_da_g, const float[:,:,:] qlat_g, const float[:,:,:,:] bathy_buf, const float[:,:] crosswalk_g, float[:,:,:,:] output_buf) nogil:
 
 
-    """
+    '''
     
     Passed variables
 
@@ -113,7 +111,7 @@ cdef void compute_diff_kernel(const float[:] timestep_ar_g, const int[:] mem_siz
                         - elv_ev_g
                         - depth_ev_g   
 
-    """
+    '''
 
     # combine output: q_ev_g, elv_ev_g, depth_ev_g
     cdef reach.QVD_diff rv
@@ -171,7 +169,7 @@ cdef void compute_diff_kernel(const float[:] timestep_ar_g, const int[:] mem_siz
                 mann_bathy_g[k,i,j] = bathy_buf[k,i,j,2]
 
     # Call the diffusion wrapper; calls indirectly c_diffnw in pydiffusive.f90 
-    reach.wavediffusion (
+    reach.diffusion_callWrapper (
                             timestep_ar_g,
                             nts_ql_g, 
                             nts_ub_g, 
@@ -258,240 +256,60 @@ cdef void compute_diff_kernel(const float[:] timestep_ar_g, const int[:] mem_siz
 
 
 
-
-
-
-cpdef object column_mapper(object src_cols):
-    """Map source columns to columns expected by algorithm"""
-    cdef object index = {}
-    cdef object i_label
-    for i_label in enumerate(src_cols):
-        index[i_label[1]] = i_label[0]
-
-    cdef object rv = []
-    cdef object label
-    #qlat, dt, dx, bw, tw, twcc, n, ncc, cs, s0, qdp, velp, depthp
-    for label in ['dt', 'dx', 'bw', 'tw', 'twcc', 'n', 'ncc', 'cs', 's0']:
-        rv.append(index[label])
-    return rv
-
-
-
-
-
-cpdef object compute_network_structured(
-    int nsteps,
-    float dt,
-    int qts_subdivisions,
-    list reaches_wTypes, # a list of tuples
-    dict upstream_connections,
-    const long[:] data_idx,
-    object[:] data_cols,
-    const float[:,:] data_values,
-    const float[:,:] initial_conditions,
-    const float[:,:] qlat_values,
-    list lake_numbers_col,
-    const double[:,:] wbody_cols,
-    dict data_assimilation_parameters,
-    const int[:,:] reservoir_types,
-    bint reservoir_type_specified,
-    str model_start_time,
-    const float[:,:] usgs_values,
-    const int[:] usgs_positions,
-    const int[:] usgs_positions_reach,
-    const int[:] usgs_positions_gage,
-    const float[:] lastobs_values_init,
-    const float[:] time_since_lastobs_init,
-    const double da_decay_coefficient,
-    const float[:,:] reservoir_usgs_obs,
-    const int[:] reservoir_usgs_wbody_idx,
-    const float[:] reservoir_usgs_time,
-    const float[:] reservoir_usgs_update_time,
-    const float[:] reservoir_usgs_prev_persisted_flow,
-    const float[:] reservoir_usgs_persistence_update_time,
-    const float[:] reservoir_usgs_persistence_index,
-    const float[:,:] reservoir_usace_obs,
-    const int[:] reservoir_usace_wbody_idx,
-    const float[:] reservoir_usace_time,
-    const float[:] reservoir_usace_update_time,
-    const float[:] reservoir_usace_prev_persisted_flow,
-    const float[:] reservoir_usace_persistence_update_time,
-    const float[:] reservoir_usace_persistence_index,
-    const float[:,:] reservoir_rfc_obs,
-    const int[:] reservoir_rfc_wbody_idx,
-    const int[:] reservoir_rfc_totalCounts,
-    list reservoir_rfc_file,
-    const int[:] reservoir_rfc_use_forecast,
-    const int[:] reservoir_rfc_timeseries_idx,
-    const float[:] reservoir_rfc_update_time,
-    const int[:] reservoir_rfc_da_timestep,
-    const int[:] reservoir_rfc_persist_days,
-    dict upstream_results={},
-    bint assume_short_ts=False,
-    bint return_courant=False,
-    int da_check_gage = -1,
-    bint from_files=True,
+cpdef object compute_diffusive_structured(
     dict diff_ins
     ):
     
     """
     Compute network
     Args:
-        nsteps (int): number of time steps
-        reaches_wTypes (list): List of tuples: (reach, reach_type), where reach_type is 0 for Muskingum Cunge reach and 1 is a reservoir
-        upstream_connections (dict): Network
-        data_idx (ndarray): a 1D sorted index for data_values
-        data_values (ndarray): a 2D array of data inputs (nodes x variables)
-        qlats (ndarray): a 2D array of qlat values (nodes x nsteps). The index must be shared with data_values
-        initial_conditions (ndarray): an n x 3 array of initial conditions. n = nodes, column 1 = qu0, column 2 = qd0, column 3 = h0
-        assume_short_ts (bool): Assume short time steps (quc = qup)
+        diff_ins: diffusive input variables dictionary
     Notes:
-        Array dimensions are checked as a precondition to this method.
-        This version creates python objects for segments and reaches,
-        but then uses only the C structures and access for efficiency
+
     """
 
-    #Make ndarrays from the mem views for convience of indexing...may be a better method
-    cdef np.ndarray[float, ndim=2] data_array = np.asarray(data_values)
-    cdef np.ndarray[float, ndim=2] init_array = np.asarray(initial_conditions)
-    cdef np.ndarray[float, ndim=2] qlat_array = np.asarray(qlat_values)
-    cdef np.ndarray[double, ndim=2] wbody_parameters = np.asarray(wbody_cols)
-    
-    ###### Declare/type variables #####
-    # Source columns
-    cdef Py_ssize_t[:] scols = np.array(column_mapper(data_cols), dtype=np.intp)
-    cdef Py_ssize_t max_buff_size = 0
-    #lists to hold reach definitions, i.e. list of ids
-    cdef list reach
-    cdef list upstream_reach
-    #lists to hold segment ids
-    cdef list segment_ids
-    cdef list upstream_ids
-    
-    
-    #buffers to pass to compute_reach_kernel
-    cdef float[:,:] buf_view
-    cdef float[:,:] out_buf
-    cdef float[:] lateral_flows
-    # list of reach objects to operate on
-    cdef list reach_objects = []
-    cdef list segment_objects
+    # unpack/declare diffusive input variables
+    cdef:
+        double[::1] timestep_ar_g = np.asfortranarray(diff_ins['timestep_ar_g'])
+        int nts_ql_g = diff_ins["nts_ql_g"]
+        int nts_ub_g = diff_ins["nts_ub_g"]
+        int nts_db_g = diff_ins["nts_db_g"]
+        int ntss_ev_g = diff_ins["ntss_ev_g"] 
+        int nts_qtrib_g = diff_ins['nts_qtrib_g']
+        int nts_da_g = diff_ins["nts_da_g"]       
+        int mxncomp_g = diff_ins["mxncomp_g"]
+        int nrch_g = diff_ins["nrch_g"]
+        double[::1,:] z_ar_g = np.asfortranarray(diff_ins["z_ar_g"])
+        double[::1,:] bo_ar_g = np.asfortranarray(diff_ins["bo_ar_g"])
+        double[::1,:] traps_ar_g = np.asfortranarray(diff_ins["traps_ar_g"])
+        double[::1,:] tw_ar_g = np.asfortranarray(diff_ins["tw_ar_g"])
+        double[::1,:] twcc_ar_g = np.asfortranarray(diff_ins["twcc_ar_g"])
+        double[::1,:] mann_ar_g = np.asfortranarray(diff_ins["mann_ar_g"])
+        double[::1,:] manncc_ar_g = np.asfortranarray(diff_ins["manncc_ar_g"])
+        double[::1,:] so_ar_g = np.asfortranarray(diff_ins["so_ar_g"])
+        double[::1,:] dx_ar_g = np.asfortranarray(diff_ins["dx_ar_g"])
+        double[::1,:] iniq = np.asfortranarray(diff_ins["iniq"])
+        int frnw_col = diff_ins["frnw_col"]
+        int[::1,:] frnw_g = np.asfortranarray(diff_ins["frnw_g"])
+        double[::1,:,:] qlat_g = np.asfortranarray(diff_ins["qlat_g"])
+        double[::1,:] ubcd_g = np.asfortranarray(diff_ins["ubcd_g"])
+        double[::1] dbcd_g = np.asfortranarray(diff_ins["dbcd_g"])
+        double[::1,:] qtrib_g = np.asfortranarray(diff_ins["qtrib_g"])
+        int paradim = diff_ins['paradim']
+        double[::1] para_ar_g = np.asfortranarray(diff_ins["para_ar_g"])
+        int mxnbathy_g = diff_ins['mxnbathy_g']
+        double[::1,:,:] x_bathy_g = np.asfortranarray(diff_ins["x_bathy_g"])
+        double[::1,:,:] z_bathy_g = np.asfortranarray(diff_ins["z_bathy_g"])
+        double[::1,:,:] mann_bathy_g = np.asfortranarray(diff_ins["mann_bathy_g"])
+        int[::1,:] size_bathy_g = np.asfortranarray(diff_ins["size_bathy_g"])    
+        double[::1,:] usgs_da_g = np.asfortranarray(diff_ins["usgs_da_g"])   
+        int[::1] usgs_da_reach_g = np.asfortranarray(diff_ins["usgs_da_reach_g"]) 
+        double[::1,:] rdx_ar_g = np.asfortranarray(diff_ins["rdx_ar_g"])
+        int cwnrow_g = diff_ins["cwnrow_g"]
+        int cwncol_g = diff_ins["cwncol_g"]
+        double[::1,:] crosswalk_g = np.asfortranarray(diff_ins["crosswalk_g"]) 
+        double[::1,:] z_thalweg_g = np.asfortranarray(diff_ins["z_thalweg_g"])
 
-
-
-    cdef long sid
-    cdef _MC_Segment segment
-    #pr.enable()
-    #Preprocess the raw reaches, creating MC_Reach/MC_Segments
-
-
-
-    for reach, reach_type in reaches_wTypes:
-        upstream_reach = upstream_connections.get(reach[0], ())
-        upstream_ids = binary_find(data_idx, upstream_reach)
-
-        segment_ids = binary_find(data_idx, reach)
-        #Set the initial condtions before running loop
-        flowveldepth_nd[segment_ids, 0] = init_array[segment_ids]
-        segment_objects = []
-        #Find the max reach size, used to create buffer for compute_reach_kernel
-        if len(segment_ids) > max_buff_size:
-            max_buff_size=len(segment_ids)
-
-        for sid in segment_ids:
-            #Initialize parameters  from the data_array, and set the initial initial_conditions
-            #These aren't actually used (the initial contions) in the kernel as they are extracted from the
-            #flowdepthvel array, but they could be used I suppose.  Note that velp isn't used anywhere, so
-            #it is inialized to 0.0
-            segment_objects.append(
-            MC_Segment(sid, *data_array[sid, scols], init_array[sid, 0], 0.0, init_array[sid, 2])
-        )
-        reach_objects.append(
-            #tuple of MC_Reach and reach_type
-            MC_Reach(segment_objects, array('l',upstream_ids))
-            )
-
-
-
-
-    # template for cdef :
-    #     cdef np.ndarray[int, ndim=1] usgs_idx  = np.asarray(reservoir_usgs_wbody_idx)
-
-    
-
-    
-    cdef np.ndarray fill_index_mask = np.ones_like(data_idx, dtype=bool)
-    cdef Py_ssize_t fill_index
-    cdef long upstream_tw_id
-    cdef dict tmp
-    cdef int idx
-    cdef float val
-
-    for upstream_tw_id in upstream_results:
-        tmp = upstream_results[upstream_tw_id]
-        fill_index = tmp["position_index"]
-        fill_index_mask[fill_index] = False
-        for idx, val in enumerate(tmp["results"]):
-            flowveldepth_nd[fill_index, (idx//qvd_ts_w) + 1, idx%qvd_ts_w] = val
-            if data_idx[fill_index]  in lake_numbers_col:
-                res_idx = binary_find(lake_numbers_col, [data_idx[fill_index]])
-                flowveldepth_nd[fill_index, 0, 0] = wbody_parameters[res_idx, 9] # TODO ref dataframe column label
-            else:
-                flowveldepth_nd[fill_index, 0, 0] = init_array[fill_index, 0] # initial flow condition
-                flowveldepth_nd[fill_index, 0, 2] = init_array[fill_index, 2] # initial depth condition
-
-
-
-    # essential variable definitions
-    nrch_g = num_reaches
-    n_nodes_reach = r_diff.reach.diff_reach.num_segments
-
-
-
-
-
-
-    timestep_ar_g = diff_ins["timestep_ar_g"]
-    nts_ql_g = diff_ins["nts_ql_g"]
-    nts_ub_g = diff_ins["nts_ub_g"]
-    nts_db_g = diff_ins["nts_db_g"]
-    nts_qtrib_g = diff_ins["nts_qtrib_g"]
-    ntss_ev_g = diff_ins["ntss_ev_g"]
-    nts_da_g = diff_ins["nts_da_g"]
-    mxncomp_g = diff_ins["mxncomp_g"]
-    nrch_g = diff_ins["nrch_g"]
-    z_ar_g = diff_ins["z_ar_g"]
-    bo_ar_g = diff_ins["bo_ar_g"] 
-    traps_ar_g = diff_ins["traps_ar_g"] 
-    tw_ar_g = diff_ins["tw_ar_g"] 
-    twcc_ar_g = diff_ins["twcc_ar_g"] 
-    mann_ar_g = diff_ins["mann_ar_g"]
-    manncc_ar_g = diff_ins["manncc_ar_g"]
-    so_ar_g = diff_ins["so_ar_g"]
-    dx_ar_g = diff_ins["dx_ar_g"]
-    frnw_col = diff_ins["frnw_col"]
-    frnw_g = diff_ins["frnw_g"]
-    qlat_g = diff_ins["qlat_g"]
-    ubcd_g = diff_ins["ubcd_g"]
-    dbcd_g = diff_ins["dbcd_g"]
-    qtrib_g = diff_ins["qtrib_g"]
-    paradim = diff_ins["paradim"]
-    para_ar_g = diff_ins["para_ar_g"]
-    mxnbathy_g = diff_ins["mxnbathy_g"] 
-    x_bathy_g = diff_ins["x_bathy_g"] 
-    z_bathy_g = diff_ins["z_bathy_g"]
-    mann_bathy_g = diff_ins["mann_bathy_g"] 
-    size_bathy_g = diff_ins["size_bathy_g"]
-    iniq = diff_ins["iniq"]
-    pynw = diff_ins["pynw"]
-    ordered_reaches = diff_ins["ordered_reaches"]
-    usgs_da_g = diff_ins["usgs_da_g"]
-    usgs_da_reach_g = diff_ins["usgs_da_reach_g"]
-    rdx_ar_g = diff_ins["rdx_ar_g"]
-    crosswalk_nrow = diff_ins["cwnrow_g"]
-    crosswalk_ncol = diff_ins["cwncol_g"]
-    crosswalk_g = diff_ins["crosswalk_g"] 
-    z_thalweg_g = diff_ins["z_thalweg_g"]
 
     #
     # DEFINE BUFFERS 
@@ -512,21 +330,6 @@ cpdef object compute_network_structured(
     cdef float[:,:,:,:] bathy_buf
     bathy_buf = np.zeros( (ntss_ev_g, mxncomp_g, nrch_g, 3), dtype='float32')
     #
-
-    '''
-    # LEGACY ADAPTATION
-
-    cdef int num_reaches = len(reach_objects)
-    #Dynamically allocate a C array of reach structs
-    cdef _DiffReach* reach_diff_structs = <_DiffReach*>malloc(sizeof(_DiffReach)*num_reaches)
-    #Populate the above array with the structs contained in each reach object
-    for i in range(num_reaches):
-        reach_diff_structs[i] = (<DiffReach>reach_objects[i])._reach
-
-    #reach iterator
-    cdef _DiffReach* r_diff
-    '''
-
 
     # BEGINNING OF ORIGINAL DIFFUSIVE BRANCH
 
@@ -549,9 +352,9 @@ cpdef object compute_network_structured(
     mem_size_buf[12] = cwncol_g    # : crosswalk columns                 
     #
     # assign diffusion buffer
-    for _i in range(n_nodes_reach):
-        seg = get_diffusive_segment(r_diff, _i)
-        for jj in range (nrch_g):
+    for jj in range (nrch_g):
+        for seg in range(n_nodes_reach):
+
             diff_buff[seg,jj,0] = z_ar_g[seg,jj]
             diff_buff[seg,jj,1]= bo_ar_g[seg,jj]
             diff_buff[seg,jj,2] = traps_ar_g[seg,jj]
@@ -565,9 +368,8 @@ cpdef object compute_network_structured(
             diff_buff[seg,jj,10] = z_thalweg_g[seg,jj]
     #
     # assign bathy buffer
-    for _i in range(n_nodes_reach):
-        seg = get_diffusive_segment(r_diff, _i)             
-        for jj in range (nrch_g):     
+    for jj in range (nrch_g):
+        for seg in range(n_nodes_reach):           
             for kk in range(mxnbathy_g):
                         
                 bathy_buf[kk,seg,jj,0] = x_bathy_g[kk,seg,jj]
@@ -625,9 +427,8 @@ cpdef object compute_network_structured(
     compute_diff_kernel(const float[:] timestep_ar_g, const int[:] mem_size_buf, const int[:] usgs_da_reach_g, const int[:,:] frnw_ar_g, const int[:,:] size_bathy_g, const float[:] dbcd_g, const float[:] para_ar_g, const float[:,:,:] diff_buff, float[:,:] so_ar_g, const float[:,:] ubcd_g, const float[:,:] qtrib_g, const float[:,:] usgs_da_g, const float[:,:,:] qlat_g, const float[:,:,:,:] bathy_buf, const float[:,:] crosswalk_g, float[:,:,:,:] output_buf) nogil:
 
     # Retrieve output (flow vel depth)
-    for _i in range(mxncomp_g):
-        seg = get_diffusive_segment(r_diff, _i)                     
-        for jj in range (nrch_g):
+    for jj in range (nrch_g):
+        for seg in range(mxncomp_g):        
             for kk in range(ntss_ev_g):
                         
                 out.q_ev_g[kk,seg,jj] = output_buf[kk,seg,jj,0] 
@@ -637,3 +438,5 @@ cpdef object compute_network_structured(
     # END OF DIFFUSIVE BRANCH
 
     # TODO: RETURN FORMAT
+    return out
+    

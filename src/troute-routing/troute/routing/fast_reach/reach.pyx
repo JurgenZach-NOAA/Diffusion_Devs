@@ -101,7 +101,7 @@ cdef void muskingcunge(float dt,
 
 
 @cython.boundscheck(False)
-cdef void wavediffusion(
+cdef void diffusion_callWrapper(
         double timestep_ar_g,
         int nts_ql_g, 
         int nts_ub_g, 
