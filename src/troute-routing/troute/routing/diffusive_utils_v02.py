@@ -1056,11 +1056,14 @@ def diffusive_input_data_v02(
         # python-to-fortran channel network mapping
         diff_ins["frnw_col"] = frnw_col
         diff_ins["frnw_g"] = frnw_g
+
+        # TIME DEPENDENT
         # flow forcing data
         diff_ins["qlat_g"] = qlat_g
         diff_ins["ubcd_g"] = ubcd_g
         diff_ins["dbcd_g"] = dbcd_g
         diff_ins["qtrib_g"] = qtrib_g
+
         # diffusive model internal parameters
         diff_ins["paradim"] = paradim 
         diff_ins["para_ar_g"] = para_ar_g
@@ -1075,8 +1078,11 @@ def diffusive_input_data_v02(
         # python-fortran crosswalk data
         diff_ins["pynw"] = pynw
         diff_ins["ordered_reaches"] = ordered_reaches    
+
+        # TIME DEPENDENT
         # Data Assimilation
         diff_ins["usgs_da_g"]   = usgs_da_g 
+
         diff_ins["usgs_da_reach_g"] = usgs_da_reach_g
         diff_ins["rdx_ar_g"] = rdx_ar_g 
         diff_ins["cwnrow_g"] = crosswalk_nrow
@@ -1097,20 +1103,20 @@ def diffusive_input_data_v02(
         diff_ins["mxncomp_g"] = mxncomp_g
         diff_ins["nrch_g"] = nrch_g
         # synthetic (trapezoidal) xsection geometry data 
-        diff_ins["z_ar_g"] = rz_ar_g
-        diff_ins["bo_ar_g"] = rbo_ar_g
-        diff_ins["traps_ar_g"] = rtraps_ar_g
-        diff_ins["tw_ar_g"] = rtw_ar_g
-        diff_ins["twcc_ar_g"] = rtwcc_ar_g
-        diff_ins["mann_ar_g"] = rmann_ar_g
-        diff_ins["manncc_ar_g"] = rmanncc_ar_g
-        diff_ins["so_ar_g"] = rso_ar_g
-        diff_ins["dx_ar_g"] = rdx_ar_g
+        diff_ins["z_ar_g"] = rz_ar_g   # REFACTORED
+        diff_ins["bo_ar_g"] = rbo_ar_g   # REFACTORED
+        diff_ins["traps_ar_g"] = rtraps_ar_g   # REFACTORED
+        diff_ins["tw_ar_g"] = rtw_ar_g   # REFACTORED
+        diff_ins["twcc_ar_g"] = rtwcc_ar_g   # REFACTORED
+        diff_ins["mann_ar_g"] = rmann_ar_g   # REFACTORED
+        diff_ins["manncc_ar_g"] = rmanncc_ar_g   # REFACTORED
+        diff_ins["so_ar_g"] = rso_ar_g   # REFACTORED
+        diff_ins["dx_ar_g"] = rdx_ar_g   # REFACTORED
         # python-to-fortran channel network mapping
         diff_ins["frnw_col"] = frnw_col
-        diff_ins["frnw_g"] = rfrnw_g
+        diff_ins["frnw_g"] = rfrnw_g   # REFACTORED
         # flow forcing data
-        diff_ins["qlat_g"] = rqlat_g
+        diff_ins["qlat_g"] = rqlat_g   # REFACTORED
         diff_ins["ubcd_g"] = ubcd_g
         diff_ins["dbcd_g"] = dbcd_g
         diff_ins["qtrib_g"] = qtrib_g
@@ -1124,7 +1130,7 @@ def diffusive_input_data_v02(
         diff_ins["mann_bathy_g"] = mann_bathy_g
         diff_ins["size_bathy_g"] = size_bathy_g    
         # initial flow value
-        diff_ins["iniq"] = riniq
+        diff_ins["iniq"] = riniq   # REFACTORED
         # python-fortran crosswalk data
         diff_ins["pynw"] = pynw
         diff_ins["ordered_reaches"] = ordered_reaches    
@@ -1137,6 +1143,200 @@ def diffusive_input_data_v02(
         diff_ins["crosswalk_g"] =  crosswalk_g   
         diff_ins["z_thalweg_g"] = z_thalweg_g
     return diff_ins
+
+
+
+def diffusive_update_data_v02(
+    tw,
+    rconn,
+    mainstem_seg_list,
+    param_df,
+    qlat, 
+    initial_conditions,
+    junction_inflows,
+    t0,
+    nsteps,
+    usgs_df,
+    refactored_diffusive_domain,
+    coastal_boundary_depth_df,
+    diff_ins_in
+):
+
+    """
+    Build input data objects for diffusive wave model
+    
+    Parameters
+    ----------
+    tw -- (int) Tailwater segment ID
+    rconn -- (dict) upstream connections for each segment in the network
+    mainstem_seg_list -- 
+    param_df --(DataFrame) geomorphic parameters
+    qlat -- (ndarray of float32) qlateral data (m3/sec)
+    initial_conditions -- (ndarray of float32) initial flow (m3/sec) and depth (m above ch bottom) states for network nodes
+    junction_inflows -- 
+    t0 --
+    nsteps --
+    usgs_df --(DataFrame) observed usgs flow data
+    refactored_diffusive_domain -- (dict) geometric relationship information between original and refactored hydrofabrics
+    coastal_boundary_depth_df -- 
+    diff_ins_in -- (dict) formatted inputs for diffusive wave model
+    
+    Returns
+    -------
+    _update_diff_ins -- (dict) updates of formatted inputs for diffusive wave model
+    """
+
+    timestep_ar_g  = diff_ins_in["timestep_ar_g"]
+    t0_g = timestep_ar_g[1]
+    tfin_g = timestep_ar_g[2]
+    dt_ql_g = timestep_ar_g[4]
+    dt_ub_g = timestep_ar_g[5]
+    dt_qtrib_g = timestep_ar_g[7]
+    dt_da_g = timestep_ar_g[8]
+
+    para_ar_g = diff_ins_in["para_ar_g"]
+
+    mxncomp_g = diff_ins_in["mxncomp_g"]
+    nrch_g = diff_ins_in["nrch_g"]
+
+    # Order reaches by junction depth
+    path_func = partial(nhd_network.split_at_waterbodies_and_junctions, set(junction_inflows.index.to_list()),rconn)
+    tr = nhd_network.dfs_decomposition_depth_tuple(rconn, path_func)    
+    jorder_reaches = sorted(tr, key=lambda x: x[0])
+    mx_jorder = max(jorder_reaches)[0]  # maximum junction order of subnetwork of TW
+
+    ordered_reaches = diff_ins_in["ordered_reaches"]
+
+    update_para_ar_g     = np.copy(para_ar_g) 
+    update_timestep_ar_g = np.copy(timestep_ar_g)
+
+    update_qlat_g = np.copy(diff_ins_in["qlat_g"])
+    update_ubcd_g = np.copy(diff_ins_in["ubcd_g"])
+    update_dbcd_g = np.copy(diff_ins_in["dbcd_g"])
+    update_qtrib_g = np.copy(diff_ins_in["qtrib_g"])
+    update_usgs_da_g = np.copy(diff_ins_in["usgs_da_g"])
+    update_usgs_da_reach_g = np.copy(update_diff_ins["usgs_da_reach_g"])
+
+
+    # ---------------------------------------------------------------------------------
+    #                              Step 0-7
+
+    #                  Update lateral inflow data
+    # ---------------------------------------------------------------------------------
+    nts_ql_g = (
+        math.ceil((tfin_g - t0_g) * 3600.0 / dt_ql_g)
+    )  # the number of the entire time steps of lateral flow data
+
+    update_qlat_g = np.zeros((nts_ql_g, mxncomp_g, nrch_g))
+
+    fp_qlat_map(
+        mx_jorder,
+        ordered_reaches,
+        nts_ql_g,
+        param_df,
+        qlat,
+        update_qlat_g,
+    )
+
+
+    # ---------------------------------------------------------------------------------
+    #                              Step 0-8
+
+    #       Update upstream boundary (top segments of head basin reaches) data
+    # ---------------------------------------------------------------------------------
+    # currently all zeroes by default.  
+    nts_ub_g = int((tfin_g - t0_g) * 3600.0 / dt_ub_g)  
+    update_ubcd_g = np.zeros((nts_ub_g, nrch_g)) 
+
+ 
+    # ---------------------------------------------------------------------------------
+    #                              Step 0-9
+
+    #       Prepare downstrea boundary (bottom segments of TW reaches) data
+    # ---------------------------------------------------------------------------------   
+    dt_db_g, dsbd_option, update_nts_db_g, update_dbcd_g =  fp_coastal_boundary_input_map(
+                                                                        tw,
+                                                                        coastal_boundary_depth_df, 
+                                                                        nrch_g,
+                                                                        t0,
+                                                                        t0_g,
+                                                                        tfin_g)
+    
+    update_timestep_ar_g[6] = dt_db_g
+    update_para_ar_g[10] = dsbd_option  # downstream water depth boundary condition: 1: given water depth data, 2: normal depth    
+
+
+    # ---------------------------------------------------------------------------------------------
+    #                              Step 0-9-2
+
+    #       Prepare tributary q time series data generated by MC that flow into a juction boundary  
+    # ---------------------------------------------------------------------------------------------
+    nts_qtrib_g = int((tfin_g - t0_g) * 3600.0 / dt_qtrib_g) + 1 # Even MC-computed flow start from first 5 min, t0 is coverd by initial_conditions. 
+    update_qtrib_g = np.zeros((nts_qtrib_g, nrch_g))
+    frj = -1
+    for x in range(mx_jorder, -1, -1):
+        for head_segment, reach in ordered_reaches[x]:
+            frj = frj + 1
+            if head_segment not in mainstem_seg_list:
+                update_qtrib_g[1:,frj] = junction_inflows.loc[head_segment]                
+                # TODO - if one of the tributary segments is a waterbody, it's initial conditions
+                # will not be in the initial_conditions array, but rather will be in the waterbodies_df array
+                update_qtrib_g[0,frj] = initial_conditions.loc[head_segment, 'qu0']    
+
+
+    # ---------------------------------------------------------------------------------------------
+    #                              Step 0-11
+                
+    #       Prepare interpolated USGS streamflow values at every dt_da_g time step [sec]   
+    # ---------------------------------------------------------------------------------------------
+    update_nts_da_g, update_usgs_da_g, update_usgs_da_reach_g = fp_da_map(
+                                                mx_jorder,
+                                                ordered_reaches,
+                                                usgs_df,
+                                                nrch_g,
+                                                t0,
+                                                nsteps,
+                                                dt_da_g,
+                                                t0_g,
+                                                tfin_g)
+    
+    # build a dictionary of diffusive model inputs and helper variables
+    update_diff_ins = {}
+    if not refactored_diffusive_domain:
+        # for original hydrofabric
+        # model time steps
+        update_diff_ins["timestep_ar_g"] = update_timestep_ar_g  
+        update_diff_ins["nts_da_g"]      = update_nts_da_g
+        # flow forcing data
+        update_diff_ins["qlat_g"] = update_qlat_g
+        update_diff_ins["ubcd_g"] = update_ubcd_g
+        update_diff_ins["dbcd_g"] = update_dbcd_g
+        update_diff_ins["qtrib_g"] = update_qtrib_g
+        # diffusive model internal parameters
+        update_diff_ins["para_ar_g"] = update_para_ar_g
+        # Data Assimilation
+        update_diff_ins["usgs_da_g"]   = update_usgs_da_g       
+        update_diff_ins["usgs_da_reach_g"] = update_usgs_da_reach_g
+    else:
+        # for refactored hydrofabric
+        # model time steps
+        update_diff_ins["timestep_ar_g"] = update_timestep_ar_g  
+        update_diff_ins["nts_da_g"] = update_nts_da_g 
+        # flow forcing data
+        update_diff_ins["qlat_g"] = rqlat_g   # REFACTORED
+        update_diff_ins["ubcd_g"] = update_ubcd_g
+        update_diff_ins["dbcd_g"] = update_dbcd_g
+        update_diff_ins["qtrib_g"] = update_qtrib_g
+        # diffusive model internal parameters
+        update_diff_ins["para_ar_g"] = update_para_ar_g  
+        # Data Assimilation
+        update_diff_ins["usgs_da_g"]   = update_usgs_da_g       
+        update_diff_ins["usgs_da_reach_g"] = update_usgs_da_reach_g
+
+    return update_diff_ins
+
+
+
 
 def unpack_output(pynw, ordered_reaches, out_q, out_elv):
     """

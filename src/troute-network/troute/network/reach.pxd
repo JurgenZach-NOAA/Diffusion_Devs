@@ -54,9 +54,12 @@ cdef extern from "reach_structs.h":
     int _num_upstream_ids;
     int type;
     long id;
+  ctypedef struct _Diff_Reach:
+    int num_segments
+  # TODO: create equivalent of _ReachUnion and _Reach for Diffusive 
 
 ctypedef enum compute_type:
-  MC_REACH, RESERVOIR_LP, RESERVOIR_HYBRID, RESERVOIR_RFC
+  MC_REACH, DIFFUSIVE_REACH, RESERVOIR_LP, RESERVOIR_HYBRID, RESERVOIR_RFC
 
 #TODO implement junction or make multiple upstreams
 cdef class Segment():
